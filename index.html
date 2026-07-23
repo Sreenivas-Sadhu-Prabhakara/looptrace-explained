@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+  <title>JavaScript event loop explained — animated call stack, microtask &amp; macrotask guide</title>
+  <meta name="description" content="The JavaScript event loop explained with animation: watch the call stack, microtask queue and macrotask queue run real snippets — every console order proven in real Node by looptrace. Free, offline, no tracking.">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="https://sreenivas-sadhu-prabhakara.github.io/looptrace-explained/">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="Sreenivas Sadhu Prabhakara">
+  <meta name="keywords" content="javascript event loop explained, event loop animation, microtask vs macrotask, call stack explained, setTimeout vs promise order, async await execution order, javascript interview questions event loop, queueMicrotask, promise then order, looptrace">
+  <meta name="theme-color" content="#101211" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#E3EAE0" media="(prefers-color-scheme: light)">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="looptrace-explained">
+  <meta property="og:title" content="JavaScript event loop explained — animated guide">
+  <meta property="og:description" content="Watch the call stack, microtask queue and macrotask queue run real snippets — every console order on this page is proven by executing the code in real Node.">
+  <meta property="og:url" content="https://sreenivas-sadhu-prabhakara.github.io/looptrace-explained/">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://sreenivas-sadhu-prabhakara.github.io/looptrace-explained/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A racetrack event-loop with run script, drain microtasks and next macrotask stations, a crimson tick dot, and the proven console order A D C B">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JavaScript event loop explained — animated guide">
+  <meta name="twitter:description" content="Watch the call stack, microtask queue and macrotask queue run real snippets — every console order on this page is proven by executing the code in real Node.">
+  <meta name="twitter:image" content="https://sreenivas-sadhu-prabhakara.github.io/looptrace-explained/og-image.png">
+  <meta name="twitter:image:alt" content="A racetrack event-loop with run script, drain microtasks and next macrotask stations, a crimson tick dot, and the proven console order A D C B">
+
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <!-- Structured data (data blocks; not executable script) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "looptrace-explained",
+    "description": "An animated explainer of the JavaScript event loop — call stack, microtask queue, macrotask queue — where every console order shown is proven by executing the snippet in real Node. A companion to the looptrace visualizer.",
+    "url": "https://sreenivas-sadhu-prabhakara.github.io/looptrace-explained/",
+    "inLanguage": "en",
+    "license": "https://opensource.org/licenses/MIT",
+    "author": { "@type": "Person", "name": "Sreenivas Sadhu Prabhakara" },
+    "about": {
+      "@type": "SoftwareApplication",
+      "name": "looptrace",
+      "url": "https://sreenivas-sadhu-prabhakara.github.io/looptrace/",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any (modern web browser)",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the difference between a microtask and a macrotask in JavaScript?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Macrotasks (like setTimeout callbacks) are taken one per event-loop turn. Microtasks (promise .then callbacks, queueMicrotask, await continuations) live in a separate queue that is drained completely after every task — even microtasks queued during the drain run before the next macrotask. That is why a promise callback always beats a setTimeout(0) callback."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does setTimeout(fn, 0) run after Promise.then?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "setTimeout(fn, 0) only queues a macrotask; it never runs immediately. Before the event loop takes the next macrotask it performs a microtask checkpoint that drains the entire microtask queue — so every pending .then callback runs first, even if the timeout was queued earlier."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Are the console orders in these animations real or illustrative?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Real. Every snippet on this page is executed verbatim in a real Node child process (Node v25.4.0, verified 2026-07-23) by the site's own test suite, and the captured output must exactly match the order shown in the animation. The looptrace visualizer applies the same rule to all 36 of its snippets: any snippet its model cannot predict is removed, never patched by hand."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does this page work offline and is it private?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. This is a static page with a strict Content-Security-Policy (connect-src 'none'), so the browser itself blocks any network request. There are no accounts, no analytics and no tracking; the only stored value is your theme choice, in your browser's localStorage."
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the explainer</a>
+
+  <header class="hero">
+    <div class="wrap">
+      <div class="hero__top">
+        <div class="brand">
+          <svg viewBox="0 0 32 32" class="brand__mark" aria-hidden="true" role="presentation">
+            <rect x="4" y="7" width="24" height="18" rx="9" fill="none" stroke="currentColor" stroke-width="2.4"/>
+            <circle class="brand__dot" cx="16" cy="7" r="3.4"/>
+            <path d="M13.4 12.6 L20 16 L13.4 19.4 Z" fill="currentColor"/>
+          </svg>
+          <span class="brand__name">looptrace<span class="brand__suffix">·explained</span></span>
+        </div>
+        <button id="theme-toggle" class="btn btn--ghost" type="button" aria-live="polite">Theme: auto</button>
+      </div>
+
+      <div class="hero__grid">
+        <div class="hero__copy">
+          <h1>JavaScript Event Loop Explained — the Call Stack, Microtask &amp; Macrotask Queues, Animated</h1>
+          <p class="lede">Async ordering is not magic; it is one small loop with strict rules. This page animates those rules on <strong>real snippets</strong> — and every console order you will see here is <strong>proven by running the code in real Node</strong>, not asserted from memory. It is the guided tour behind <a href="https://sreenivas-sadhu-prabhakara.github.io/looptrace/">looptrace</a>, the step-through visualizer.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="https://sreenivas-sadhu-prabhakara.github.io/looptrace/">Open the looptrace visualizer</a>
+            <a class="btn btn--ghost" href="#trap">Start the tour ↓</a>
+          </div>
+          <div class="hero__badges">
+            <span class="pill">100% offline · no tracking</span>
+            <span class="pill">Orders verified in Node v25.4.0</span>
+            <span class="pill">CSS-only animation</span>
+          </div>
+        </div>
+
+        <figure class="dial" aria-label="The event loop drawn as a racetrack: run script, drain microtasks, next macrotask — a crimson tick dot circles the track.">
+          <svg viewBox="0 0 600 320" class="dial__svg" aria-hidden="true">
+            <path class="dial__track" d="M 300 60 H 470 A 70 70 0 0 1 540 130 V 190 A 70 70 0 0 1 470 260 H 130 A 70 70 0 0 1 60 190 V 130 A 70 70 0 0 1 130 60 H 300"/>
+            <circle class="dial__station" cx="300" cy="60" r="7"/>
+            <circle class="dial__station" cx="540" cy="160" r="7"/>
+            <circle class="dial__station" cx="60" cy="160" r="7"/>
+            <circle class="dial__dot dial__dot--static" cx="300" cy="60" r="11"/>
+            <circle class="dial__dot dial__dot--moving" cx="0" cy="0" r="11"/>
+            <text class="dial__label" x="300" y="36" text-anchor="middle">run script</text>
+            <text class="dial__label" x="540" y="300" text-anchor="middle">drain microtasks</text>
+            <text class="dial__label dial__label--left" x="60" y="300" text-anchor="middle">next macrotask</text>
+          </svg>
+          <figcaption class="dial__caption">One turn of the loop: run a task → drain <em>every</em> microtask → take the next macrotask.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ 1. THE TRAP ============ -->
+    <section class="scene scene--trap" id="trap" aria-labelledby="trap-h">
+      <div class="wrap">
+        <p class="kicker">01 · The trap</p>
+        <h2 id="trap-h">Four lines. Most developers guess the order wrong.</h2>
+        <p class="scene__lede">This is the most evergreen JavaScript interview question there is — and a daily debugging trap. The naive guess is <span class="mono-run">A&nbsp;B&nbsp;C&nbsp;D</span>. Node prints something else.</p>
+
+        <div class="duo">
+          <pre class="code" aria-label="JavaScript snippet"><code>console.log('A');
+setTimeout(() => console.log('B'), 0);
+Promise.resolve().then(() => console.log('C'));
+console.log('D');</code></pre>
+
+          <div class="console" aria-label="Console output, in proven order">
+            <div class="console__bar"><span class="console__dot" aria-hidden="true"></span>console — real Node output</div>
+            <ol class="console__list" data-demo="classic-interleave">
+              <li>A</li>
+              <li>D</li>
+              <li>C</li>
+              <li>B</li>
+            </ol>
+            <p class="verified">✓ Order verified by executing this exact code in Node v25.4.0 on 2026-07-23 — re-proven by this site's test suite on every build.</p>
+          </div>
+        </div>
+
+        <div class="scene__foot">
+          <button class="btn btn--ghost replay" type="button" data-replay>↺ Replay animation</button>
+          <p class="scene__why"><strong>Why?</strong> <code>setTimeout</code> queues a <em>macrotask</em>; <code>.then</code> queues a <em>microtask</em> — and microtasks always run first. The next three scenes show exactly why.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 2. ONE TURN OF THE LOOP ============ -->
+    <section class="scene scene--turn" id="one-turn" aria-labelledby="turn-h">
+      <div class="wrap">
+        <p class="kicker">02 · One turn of the loop</p>
+        <h2 id="turn-h">Watch the queues do their jobs</h2>
+        <p class="scene__lede">The same four lines, played across the loop's lanes — exactly how looptrace's step player draws it. Crimson always marks <em>the thing executing right now</em>.</p>
+
+        <div class="turn">
+          <ol class="turn__phases" aria-label="Loop phases">
+            <li class="phase phase--1"><span class="phase__num">1</span> run script</li>
+            <li class="phase phase--2"><span class="phase__num">2</span> drain microtasks</li>
+            <li class="phase phase--3"><span class="phase__num">3</span> next macrotask</li>
+          </ol>
+
+          <div class="turn__grid">
+            <div class="lane lane--stack">
+              <h3 class="lane__title">Call stack</h3>
+              <div class="lane__body lane__body--stack">
+                <div class="frame frame--timeout">setTimeout callback</div>
+                <div class="frame frame--then">.then callback</div>
+                <div class="frame frame--script">script</div>
+                <p class="lane__empty">empty — turn complete</p>
+              </div>
+            </div>
+            <div class="lane lane--micro">
+              <h3 class="lane__title">Microtask queue</h3>
+              <div class="lane__body">
+                <div class="chip chip--micro">.then&nbsp;→&nbsp;log('C')</div>
+                <p class="lane__empty">drained</p>
+              </div>
+            </div>
+            <div class="lane lane--macro">
+              <h3 class="lane__title">Macrotask queue</h3>
+              <div class="lane__body">
+                <div class="chip chip--macro">setTimeout&nbsp;→&nbsp;log('B')</div>
+                <p class="lane__empty">drained</p>
+              </div>
+            </div>
+            <div class="lane lane--console">
+              <h3 class="lane__title">Console</h3>
+              <ol class="console__list console__list--turn" data-demo="classic-interleave">
+                <li>A</li>
+                <li>D</li>
+                <li>C</li>
+                <li>B</li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="turn__captions">
+            <p class="tcap tcap--1"><strong>1 · run script:</strong> <code>script</code> runs on the stack — logs <code>A</code>, queues the timeout (macrotask), queues the <code>.then</code> (microtask), logs <code>D</code>, then pops.</p>
+            <p class="tcap tcap--2"><strong>2 · microtask checkpoint:</strong> before anything else, the microtask queue is drained — the <code>.then</code> callback runs and logs <code>C</code>.</p>
+            <p class="tcap tcap--3"><strong>3 · next macrotask:</strong> only now is the timeout callback taken — it runs and logs <code>B</code>. The tick dot is back where it started.</p>
+          </div>
+        </div>
+
+        <div class="scene__foot">
+          <button class="btn btn--ghost replay" type="button" data-replay>↺ Replay the turn</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 3. MICROTASKS DRAIN FULLY ============ -->
+    <section class="scene scene--drain" id="drain" aria-labelledby="drain-h">
+      <div class="wrap">
+        <p class="kicker">03 · The drain rule</p>
+        <h2 id="drain-h">Microtasks drain <em>fully</em> — even ones queued mid-drain</h2>
+        <p class="scene__lede">Two timeouts are queued <em>first</em>, yet both promise callbacks still beat them — because a microtask queued <em>during</em> the checkpoint is drained in the same checkpoint.</p>
+
+        <div class="duo">
+          <pre class="code" aria-label="JavaScript snippet"><code>setTimeout(() => console.log('t1'), 0);
+setTimeout(() => console.log('t2'), 0);
+Promise.resolve().then(() => {
+  console.log('p1');
+  Promise.resolve().then(() => console.log('p2'));
+});</code></pre>
+
+          <div class="drainviz" aria-label="Execution order: p1, then nested p2, then t1, then t2">
+            <div class="drainviz__row">
+              <span class="drainviz__tag drainviz__tag--micro">microtasks</span>
+              <span class="chip chip--micro dchip dchip--1">p1</span>
+              <span class="chip chip--micro dchip dchip--2">p2 <small>(queued mid-drain)</small></span>
+            </div>
+            <div class="drainviz__row">
+              <span class="drainviz__tag drainviz__tag--macro">macrotasks</span>
+              <span class="chip chip--macro dchip dchip--3">t1</span>
+              <span class="chip chip--macro dchip dchip--4">t2</span>
+            </div>
+            <ol class="console__list console__list--drain" data-demo="microtasks-drain-fully">
+              <li>p1</li>
+              <li>p2</li>
+              <li>t1</li>
+              <li>t2</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="scene__foot">
+          <button class="btn btn--ghost replay" type="button" data-replay>↺ Replay animation</button>
+          <p class="scene__why"><strong>Rule:</strong> the checkpoint empties the <em>whole</em> microtask queue before the loop may take one — just one — macrotask.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 4. AWAIT ============ -->
+    <section class="scene scene--await" id="await" aria-labelledby="await-h">
+      <div class="wrap">
+        <p class="kicker">04 · await, demystified</p>
+        <h2 id="await-h"><code>await</code> suspends the function — it never blocks the thread</h2>
+        <p class="scene__lede">At <code>await</code>, the function pauses and its continuation is queued as <strong>one microtask</strong>. Everything after the call keeps running first.</p>
+
+        <div class="duo">
+          <pre class="code" aria-label="JavaScript snippet"><code>async function f() {
+  console.log('1');
+  await null;
+  console.log('2');
+}
+f();
+console.log('3');</code></pre>
+
+          <div class="awaitviz">
+            <ol class="steps" aria-label="What happens, step by step">
+              <li class="step step--1"><code>f()</code> is called and runs synchronously — logs <code>1</code></li>
+              <li class="step step--2"><code>await null</code> suspends <code>f</code>; its continuation is queued as <strong>one microtask</strong></li>
+              <li class="step step--3">the script continues past the call — logs <code>3</code>, then pops</li>
+              <li class="step step--4">microtask checkpoint: the continuation resumes <code>f</code> — logs <code>2</code></li>
+            </ol>
+            <ol class="console__list console__list--await" data-demo="await-suspends">
+              <li>1</li>
+              <li>3</li>
+              <li>2</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="scene__foot">
+          <button class="btn btn--ghost replay" type="button" data-replay>↺ Replay animation</button>
+          <p class="scene__why"><strong>Modern semantics:</strong> since ES2019, an <code>await</code> on a resolved value costs exactly one microtask tick. looptrace models these modern semantics and says so.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 5. PROVEN, NOT ASSERTED ============ -->
+    <section class="scene scene--proof" id="proven" aria-labelledby="proof-h">
+      <div class="wrap">
+        <p class="kicker">05 · Proven, not asserted</p>
+        <h2 id="proof-h">Real Node is the referee for every order shown</h2>
+        <p class="scene__lede">Most event-loop diagrams show the order the author <em>believes</em> is right. looptrace — and this page — are different by construction.</p>
+
+        <div class="proof" role="img" aria-label="Verification pipeline: each snippet's code goes both to the scheduler model and to a real Node run; the two outputs must be exactly equal or the snippet is cut.">
+          <div class="proof__node proof__node--src">snippet code<br><small>verbatim, runnable</small></div>
+          <div class="proof__arrows" aria-hidden="true">
+            <svg viewBox="0 0 200 120" class="proof__svg">
+              <path class="proof__wire proof__wire--a" d="M 10 60 C 60 60 70 25 190 25"/>
+              <path class="proof__wire proof__wire--b" d="M 10 60 C 60 60 70 95 190 95"/>
+            </svg>
+          </div>
+          <div class="proof__mid">
+            <div class="proof__node">scheduler model<br><small>predicted console order</small></div>
+            <div class="proof__node">real Node v25.4.0<br><small>captured console output</small></div>
+          </div>
+          <div class="proof__eq" aria-hidden="true">===</div>
+          <div class="proof__out">
+            <div class="proof__node proof__node--ok">match → <strong>shipped</strong>, with a spec citation</div>
+            <div class="proof__node proof__node--cut">mismatch → <strong>cut</strong>, never patched by hand</div>
+          </div>
+        </div>
+
+        <p class="scene__why">All <strong>36</strong> looptrace snippets pass this gate, verified against Node v25.4.0 on 2026-07-23 — and this explainer runs the same proof on its own three demos in <code>test/facts.test.js</code>, so the page can never drift from reality.</p>
+      </div>
+    </section>
+
+    <!-- ============ 6. PRIVACY ============ -->
+    <section class="scene scene--privacy" id="privacy" aria-labelledby="privacy-h">
+      <div class="wrap">
+        <p class="kicker">06 · Enforced privacy</p>
+        <h2 id="privacy-h">The browser itself blocks any send — <code>connect-src 'none'</code></h2>
+        <p class="scene__lede">Privacy here is not a promise in a policy page; it is a Content-Security-Policy rule the browser enforces. This page — and looptrace — <em>cannot</em> make a network request.</p>
+
+        <div class="duo duo--privacy">
+          <figure class="wallviz" aria-label="Diagram: a request from the page travels toward the internet and is stopped by a wall labelled connect-src none.">
+            <svg viewBox="0 0 560 200" class="wallviz__svg" aria-hidden="true">
+              <rect x="14" y="50" width="150" height="100" rx="12" class="wallviz__box"/>
+              <text x="89" y="95" text-anchor="middle" class="wallviz__text">this page</text>
+              <text x="89" y="118" text-anchor="middle" class="wallviz__sub">fetch / XHR / beacon</text>
+              <rect x="330" y="26" width="18" height="148" rx="4" class="wallviz__wall"/>
+              <text x="339" y="196" text-anchor="middle" class="wallviz__sub wallviz__sub--mono">connect-src 'none'</text>
+              <ellipse cx="480" cy="100" rx="66" ry="42" class="wallviz__cloud"/>
+              <text x="480" y="106" text-anchor="middle" class="wallviz__sub">internet</text>
+              <path class="wallviz__req" d="M 170 100 H 324"/>
+              <g class="wallviz__x">
+                <line x1="308" y1="86" x2="336" y2="114"/>
+                <line x1="336" y1="86" x2="308" y2="114"/>
+              </g>
+            </svg>
+            <figcaption class="wallviz__cap">Blocked — by the browser, every time.</figcaption>
+          </figure>
+          <ul class="privacy__list">
+            <li><strong>No network path exists:</strong> <code>fetch</code>, XHR and WebSockets are all refused by the CSP.</li>
+            <li><strong>No third parties:</strong> no CDN scripts, no external fonts, no analytics, no cookies.</li>
+            <li><strong>Local only:</strong> looptrace stores your predict-mode streak — and this page your theme — in localStorage. Nothing ever leaves your device.</li>
+            <li><strong>Check it yourself:</strong> open DevTools → Network. It stays empty after load.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 7. FEATURE TOUR ============ -->
+    <section class="scene scene--features" id="features" aria-labelledby="features-h">
+      <div class="wrap">
+        <p class="kicker">07 · Inside looptrace</p>
+        <h2 id="features-h">What you get in the visualizer</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>36 verified snippets</h3>
+            <p>Grouped by topic — stack basics, <code>setTimeout</code>, <code>.then</code> chains, <code>queueMicrotask</code>, <code>async/await</code>, interview classics — difficulty-tagged and hash-linkable.</p>
+          </article>
+          <article class="card">
+            <h3>Step player, four live panels</h3>
+            <p>Prev / next / autoplay / arrow keys over call stack, microtask queue, macrotask queue and console — with a plain-English caption for every single step.</p>
+          </article>
+          <article class="card">
+            <h3>Racetrack phase dial</h3>
+            <p>A crimson tick dot advances around the loop — run script → drain microtasks → next macrotask — so you always know <em>which phase</em> you are in.</p>
+          </article>
+          <article class="card">
+            <h3>Predict-first mode</h3>
+            <p>Arrange the expected console lines <em>before</em> playback, then reveal. Your correct-streak lives only in localStorage. The interview-prep hook.</p>
+          </article>
+          <article class="card">
+            <h3>Citations on every snippet</h3>
+            <p>Each snippet names the WHATWG / MDN / V8 rule it demonstrates, plus the exact Node version and date its console order was verified against.</p>
+          </article>
+          <article class="card">
+            <h3>Export &amp; honest limits</h3>
+            <p>Copy any annotated step trace as Markdown or print it. Node-only phases (<code>process.nextTick</code>, <code>setImmediate</code>) are explained in prose — never simulated.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 8. CTA ============ -->
+    <section class="scene scene--cta" id="cta" aria-labelledby="cta-h">
+      <div class="wrap cta__wrap">
+        <svg viewBox="0 0 32 32" class="cta__mark" aria-hidden="true">
+          <rect x="4" y="7" width="24" height="18" rx="9" fill="none" stroke="currentColor" stroke-width="2.4"/>
+          <circle class="brand__dot" cx="16" cy="7" r="3.4"/>
+        </svg>
+        <h2 id="cta-h">Now step through it yourself</h2>
+        <p class="scene__lede cta__lede">Reading about the loop is one thing. Stepping a real snippet through the stack and queues — and predicting the order before you press play — is how it sticks.</p>
+        <a class="btn btn--primary btn--big" href="https://sreenivas-sadhu-prabhakara.github.io/looptrace/">Open looptrace — 36 proven snippets, free &amp; offline</a>
+        <p class="cta__small">No sign-up. No tracking. Works offline once loaded.</p>
+      </div>
+    </section>
+
+    <!-- ============ 9. FAQ ============ -->
+    <section class="scene scene--faq" id="faq" aria-labelledby="faq-h">
+      <div class="wrap">
+        <p class="kicker">08 · FAQ</p>
+        <h2 id="faq-h">Common questions</h2>
+        <details class="faq">
+          <summary>What is the difference between a microtask and a macrotask?</summary>
+          <p>Macrotasks (like <code>setTimeout</code> callbacks) are taken one per event-loop turn. Microtasks (promise <code>.then</code> callbacks, <code>queueMicrotask</code>, <code>await</code> continuations) live in a separate queue that is drained completely after every task — even microtasks queued during the drain run before the next macrotask. That is why a promise callback always beats a <code>setTimeout(0)</code> callback.</p>
+        </details>
+        <details class="faq">
+          <summary>Why does <code>setTimeout(fn, 0)</code> run after <code>Promise.then</code>?</summary>
+          <p><code>setTimeout(fn, 0)</code> only queues a macrotask; it never runs immediately. Before the event loop takes the next macrotask it performs a microtask checkpoint that drains the entire microtask queue — so every pending <code>.then</code> callback runs first, even if the timeout was queued earlier.</p>
+        </details>
+        <details class="faq">
+          <summary>Are the console orders in these animations real or illustrative?</summary>
+          <p>Real. Every snippet on this page is executed verbatim in a real Node child process (Node v25.4.0, verified 2026-07-23) by the site's own test suite, and the captured output must exactly match the order shown. looptrace applies the same rule to all 36 of its snippets: any snippet its model cannot predict is removed, never patched by hand.</p>
+        </details>
+        <details class="faq">
+          <summary>Does this page work offline and is it private?</summary>
+          <p>Yes. It is a static page with a strict Content-Security-Policy (<code>connect-src 'none'</code>), so the browser itself blocks any network request. No accounts, no analytics, no tracking; the only stored value is your theme choice, in your browser's localStorage.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <p class="footer__links">
+        <a href="https://sreenivas-sadhu-prabhakara.github.io/looptrace/">Open looptrace</a> ·
+        <a href="https://github.com/Sreenivas-Sadhu-Prabhakara/looptrace-explained">Source on GitHub</a> ·
+        MIT © 2026 Sreenivas Sadhu Prabhakara
+      </p>
+      <p class="footer__disclaimer"><strong>Disclaimer:</strong> this is an educational explainer provided for learning purposes only. It describes the canonical WHATWG HTML event loop over the small whitelisted op-set that looptrace models (sync calls, <code>console.log</code>, <code>setTimeout(fn, 0)</code>, promise <code>.then</code> chains, <code>queueMicrotask</code>, <code>async/await</code>); it is not a complete description of any engine's behaviour — Node's phase-based loop, <code>process.nextTick</code>, <code>setImmediate</code>, real timer clamping, DOM events, rendering and workers are out of scope. <code>await</code> semantics described are modern ES2019+. Verified console orders are tied to the stated Node version and date (Node v25.4.0, 2026-07-23); engines and specifications can change. This software is provided under the MIT License, “as is”, without warranty of any kind; the authors accept no liability for any loss or damage arising from its use.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #101211;        /* dark ink ground */
+    --bg2: #171B18;
+    --surface: #191E1B;
+    --surface2: #141816;
+    --line: #2C342E;
+    --sage: #D9E4D6;      /* pale sage ink */
+    --mist: #9DB2A0;      /* muted sage */
+    --cherry: #E8506B;    /* dark-mode cherry */
+    --cherry-deep: #C42847;
+    --ok: #6FBE8C;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    position: relative;
+    background: radial-gradient(120% 140% at 82% 12%, #1a201c 0%, var(--bg) 62%);
+    font-family: var(--sans);
+    color: var(--sage);
+    -webkit-font-smoothing: antialiased;
+  }
+  .frame {
+    position: absolute; inset: 0;
+    padding: 66px 80px 64px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 22px; }
+  .mark { width: 74px; height: 74px; }
+  .wordmark { font-size: 52px; font-weight: 800; letter-spacing: -0.035em; }
+  .wordmark em { font-style: normal; font-weight: 600; color: var(--cherry); }
+  .cols { display: flex; align-items: center; gap: 44px; }
+  .headline { flex: 1; }
+  .headline h1 {
+    font-size: 58px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1;
+  }
+  .headline h1 .go { color: var(--cherry); }
+  .headline p {
+    margin-top: 22px; font-size: 25px; font-weight: 500;
+    color: var(--mist); line-height: 1.4; max-width: 30ch;
+  }
+  /* the tick racetrack — the looptrace family signature */
+  .track { width: 430px; flex: none; }
+  .proof {
+    margin-top: 22px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 26px;
+    box-shadow: 0 24px 54px -34px rgba(0,0,0,0.85);
+  }
+  .proof .code {
+    font-family: var(--mono); font-size: 19px; line-height: 1.5;
+    color: var(--sage);
+  }
+  .proof .code .dim { color: var(--mist); }
+  .proof .code .str { color: var(--ok); }
+  .proof .out {
+    margin-top: 14px; padding-top: 14px; border-top: 1.5px solid var(--line);
+    display: flex; align-items: center; gap: 14px;
+    font-family: var(--mono);
+  }
+  .proof .out .lbl { font-size: 17px; color: var(--mist); }
+  .proof .seq { display: flex; gap: 10px; }
+  .proof .seq b {
+    font-size: 24px; font-weight: 800; color: var(--bg);
+    background: var(--cherry); border-radius: 8px;
+    width: 40px; height: 40px; display: grid; place-items: center;
+  }
+  .proof .seq b.late { background: var(--surface2); color: var(--sage); border: 1.5px solid var(--line); }
+  .chips { display: flex; gap: 13px; }
+  .chip {
+    border: 1.5px solid var(--line);
+    background: rgba(25,30,27,0.6);
+    border-radius: 999px;
+    padding: 11px 21px;
+    font-size: 21px; font-weight: 650; color: var(--mist);
+  }
+  .chip.hot { border-color: var(--cherry); color: var(--cherry); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#191E1B"/>
+        <rect x="5.5" y="8" width="21" height="16" rx="8" fill="none" stroke="#9DB2A0" stroke-width="2.2"/>
+        <circle cx="16" cy="8" r="3.1" fill="#E8506B"/>
+        <path d="M13.9 13.4 L19.6 16 L13.9 18.6 Z" fill="#D9E4D6"/>
+      </svg>
+      <span class="wordmark">looptrace <em>explained</em></span>
+    </div>
+
+    <div class="cols">
+      <div class="headline">
+        <h1>The JavaScript<br>event loop,<br><span class="go">actually animated.</span></h1>
+        <p>Watch one red tick circle the call stack, microtasks and macrotasks &mdash; every console order proven in real Node.</p>
+      </div>
+
+      <div class="track" aria-hidden="true">
+        <!-- the racetrack loop with the red tick advancing through the stations -->
+        <svg viewBox="0 0 430 250" width="430">
+          <path d="M 215 34 H 330 A 56 56 0 0 1 386 90 V 160 A 56 56 0 0 1 330 216 H 100 A 56 56 0 0 1 44 160 V 90 A 56 56 0 0 1 100 34 H 215"
+                fill="none" stroke="#2C342E" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 215 34 H 330 A 56 56 0 0 1 386 90 V 125"
+                fill="none" stroke="#E8506B" stroke-width="14" stroke-linecap="round"/>
+          <!-- stations -->
+          <circle cx="215" cy="34" r="9" fill="#191E1B" stroke="#9DB2A0" stroke-width="3"/>
+          <circle cx="386" cy="125" r="9" fill="#191E1B" stroke="#9DB2A0" stroke-width="3"/>
+          <circle cx="44" cy="125" r="9" fill="#191E1B" stroke="#9DB2A0" stroke-width="3"/>
+          <!-- the single advancing red tick -->
+          <circle cx="386" cy="125" r="15" fill="#E8506B"/>
+          <circle cx="386" cy="125" r="15" fill="none" stroke="#101211" stroke-width="3"/>
+          <!-- station labels -->
+          <text x="215" y="18" text-anchor="middle" fill="#9DB2A0" font-family="system-ui, sans-serif" font-size="15" font-weight="700">run script</text>
+          <text x="404" y="130" text-anchor="start" fill="#E8506B" font-family="system-ui, sans-serif" font-size="15" font-weight="700">micro</text>
+          <text x="26" y="130" text-anchor="end" fill="#9DB2A0" font-family="system-ui, sans-serif" font-size="15" font-weight="700">macro</text>
+        </svg>
+        <div class="proof">
+          <div class="code"><span class="dim">log(</span><span class="str">'A'</span><span class="dim">); setTimeout(&hellip;</span><span class="str">'B'</span><span class="dim">); .then(&hellip;</span><span class="str">'C'</span><span class="dim">); log(</span><span class="str">'D'</span><span class="dim">);</span></div>
+          <div class="out">
+            <span class="lbl">prints</span>
+            <span class="seq"><b>A</b><b>D</b><b>C</b><b class="late">B</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chips">
+      <span class="chip">animated walkthrough</span>
+      <span class="chip">proven in real Node</span>
+      <span class="chip hot">connect-src 'none'</span>
+      <span class="chip">free &amp; open source</span>
+    </div>
+  </div>
+</body>
+</html>
